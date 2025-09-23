@@ -1,4 +1,6 @@
-[# MemotyouTest](https://uni928.github.io/MemotyouTest/)
+[# セキュリティありテスト](https://uni928.github.io/MemotyouTest/)
+
+[# セキュリティ無し](https://uni928.github.io/MemotyouTest/index2.html)
 
 メモ帳サイトでセキュリティを考慮するならば、どのような内容にするか考察用です。
 自分用ですが、使い方や参考にしたい方はご利用頂いて構いません。
