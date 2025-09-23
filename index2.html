@@ -285,6 +285,8 @@ function renderAll(){
   renderFolders();
   renderNotes();
   renderEditor();
+  const titleEl = document.querySelector('#noteTitle');
+  if(titleEl){ titleEl.focus(); setTimeout(()=>titleEl.focus(), 0); }
 }
 
 function renderFolders(){
@@ -346,16 +348,22 @@ $('#addFolderBtn').onclick = ()=>{
   appState.folders.push(f);
   appState.selectedFolderId = f.id;
   appState.selectedNoteId = null;
-  renderFolders(); renderNotes(); renderEditor();
+  renderFolders(); renderNotes();
+  renderEditor();
+  const titleEl = document.querySelector('#noteTitle');
+  if(titleEl){ titleEl.focus(); setTimeout(()=>titleEl.focus(), 0); }
   debounceSave();
 };
 $('#addNoteBtn').onclick = ()=>{
   const folder = ensureFolderSelected();
   if(!folder){ alert('先にフォルダを作成してください。'); return; }
-  const n = { id:uuid(), title:'新しいノート', body:'', createdAt:now(), updatedAt:now() };
+  const n = { id:uuid(), title:'', body:'', createdAt:now(), updatedAt:now() };
   folder.notes.push(n);
   appState.selectedNoteId = n.id;
-  renderNotes(); renderEditor();
+  renderNotes();
+  renderEditor();
+  const titleEl = document.querySelector('#noteTitle');
+  if(titleEl){ titleEl.focus(); setTimeout(()=>titleEl.focus(), 0); }
   debounceSave();
 };
 $('#searchNotes').oninput = ()=>renderNotes();
@@ -377,7 +385,10 @@ function attachFolderEvents(){
       appState.selectedFolderId = id;
       const folder = appState.folders.find(f=>f.id===id);
       appState.selectedNoteId = (folder && folder.notes[0]) ? folder.notes[0].id : null;
-      renderFolders(); renderNotes(); renderEditor();
+      renderFolders(); renderNotes();
+  renderEditor();
+  const titleEl = document.querySelector('#noteTitle');
+  if(titleEl){ titleEl.focus(); setTimeout(()=>titleEl.focus(), 0); }
     };
     el.ondblclick = (e)=>inlineRename(e.currentTarget, 'folder');
   });
@@ -391,7 +402,10 @@ function attachFolderEvents(){
       if(!confirm(`フォルダ「${f.name}」を削除しますか？（中のノートも削除されます）`)) return;
       appState.folders = appState.folders.filter(x=>x.id!==id);
       if(appState.selectedFolderId===id){ appState.selectedFolderId=null; appState.selectedNoteId=null; }
-      renderFolders(); renderNotes(); renderEditor(); debounceSave();
+      renderFolders(); renderNotes();
+  renderEditor();
+  const titleEl = document.querySelector('#noteTitle');
+  if(titleEl){ titleEl.focus(); setTimeout(()=>titleEl.focus(), 0); } debounceSave();
     };
   });
   makeReorderable($('#folderList'), 'folder');
@@ -403,7 +417,10 @@ function attachNoteEvents(){
     el.onclick = (e)=>{
       const id = e.currentTarget.closest('.item').dataset.id;
       appState.selectedNoteId = id;
-      renderNotes(); renderEditor();
+      renderNotes();
+  renderEditor();
+  const titleEl = document.querySelector('#noteTitle');
+  if(titleEl){ titleEl.focus(); setTimeout(()=>titleEl.focus(), 0); }
     };
     el.ondblclick = (e)=>inlineRename(e.currentTarget, 'note');
   });
@@ -418,7 +435,10 @@ function attachNoteEvents(){
       if(!confirm(`ノート「${n.title}」を削除しますか？`)) return;
       folder.notes = folder.notes.filter(x=>x.id!==id);
       if(appState.selectedNoteId===id){ appState.selectedNoteId = (folder.notes[0]?.id) || null; }
-      renderNotes(); renderEditor(); debounceSave();
+      renderNotes();
+  renderEditor();
+  const titleEl = document.querySelector('#noteTitle');
+  if(titleEl){ titleEl.focus(); setTimeout(()=>titleEl.focus(), 0); } debounceSave();
     };
   });
   makeReorderable($('#noteList'), 'note');
@@ -451,9 +471,15 @@ function inlineRename(nameEl, type){
         appState.selectedFolderId = id;
         const folder = appState.folders.find(f=>f.id===id);
         appState.selectedNoteId = (folder.notes[0]?.id)||null;
-        renderFolders(); renderNotes(); renderEditor();
+        renderFolders(); renderNotes();
+  renderEditor();
+  const titleEl = document.querySelector('#noteTitle');
+  if(titleEl){ titleEl.focus(); setTimeout(()=>titleEl.focus(), 0); }
       }else{
-        appState.selectedNoteId = id; renderNotes(); renderEditor();
+        appState.selectedNoteId = id; renderNotes();
+  renderEditor();
+  const titleEl = document.querySelector('#noteTitle');
+  if(titleEl){ titleEl.focus(); setTimeout(()=>titleEl.focus(), 0); }
       }
     };
     span.ondblclick = ()=>inlineRename(span, type);
