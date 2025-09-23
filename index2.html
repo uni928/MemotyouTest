@@ -1,0 +1,555 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>フォルダ付きメモ帳（暗号化なし / IndexedDB / 自動ロード）</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#151a22; --panel2:#1a2130; --acc:#2b87ff; --text:#e8eef9;
+    --muted:#9fb0c3; --danger:#ff5d6c; --ok:#5bd1b7; --border:#263248; --hover:#22304a;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; background:var(--bg); color:var(--text); font:14px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN","Noto Sans JP", Meiryo, sans-serif;
+    display:flex; flex-direction:column; min-height:100%;
+  }
+  header{
+    display:flex; align-items:center; gap:.5rem; padding:.6rem .8rem; background:var(--panel); border-bottom:1px solid var(--border);
+  }
+  header h1{font-size:16px; margin:0; font-weight:600; letter-spacing:.2px}
+  header .spacer{flex:1}
+  .btn{
+    appearance:none; border:1px solid var(--border); background:var(--panel2); color:var(--text);
+    border-radius:8px; padding:.45rem .7rem; cursor:pointer; transition:.15s ease;
+  }
+  .btn:hover{background:var(--hover)}
+  .btn.primary{border-color:transparent; background:var(--acc); color:white}
+  .btn.danger{border-color:transparent; background:var(--danger); color:white}
+  .btn.ghost{background:transparent}
+  .badge{font-size:12px; color:var(--muted)}
+  .layout{
+    display:grid; grid-template-columns: 240px 280px 1fr; gap:10px; padding:10px; flex:1; min-height:0;
+  }
+  .panel{
+    background:var(--panel); border:1px solid var(--border); border-radius:12px; min-height:0; display:flex; flex-direction:column;
+  }
+  .panel h2{
+    font-size:13px; letter-spacing:.2px; color:var(--muted);
+    margin:0; padding:.7rem .8rem; border-bottom:1px solid var(--border);
+  }
+  .panel .toolbar{
+    padding:.5rem .6rem; display:flex; gap:.4rem; border-bottom:1px dashed var(--border);
+  }
+  .panel .content{padding:.4rem; overflow:auto; min-height:0}
+  .list{list-style:none; padding:0; margin:0}
+  .item{
+    display:flex; align-items:center; gap:.4rem; padding:.45rem .5rem .45rem .6rem; border-radius:10px; border:1px solid transparent;
+    user-select:none;
+  }
+  .item:hover{background:var(--hover)}
+  .item.active{background:#1d2a45; border-color:#2a3b62}
+  .item .name{
+    flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer;
+  }
+  .item .actions{display:flex; gap:.2rem; align-items:center}
+  .handle{
+    cursor:grab; border:none; background:transparent; color:var(--muted); font-size:18px; line-height:1; padding:.1rem .2rem; margin-left:.1rem;
+  }
+  .handle:active{cursor:grabbing}
+  .icon-btn{
+    cursor:pointer; border:none; background:transparent; color:var(--muted); padding:.15rem .25rem; border-radius:6px;
+  }
+  .icon-btn:hover{background:rgba(255,255,255,.05); color:var(--text)}
+  .reorder-list{min-height:24px}
+  .dragging{opacity:.6}
+  /* エディタ */
+  .editor{display:flex; flex-direction:column; min-height:0;}
+  .field{
+    padding:.6rem .8rem; border-bottom:1px dashed var(--border); display:flex; gap:.6rem; align-items:center;
+  }
+  .field input[type="text"]{
+    flex:1; font-size:16px; padding:.5rem .6rem; border-radius:8px;
+    border:1px solid var(--border); background:var(--panel2); color:var(--text);
+  }
+  .editor textarea{
+    flex:1; width:100%; border:none; outline:none; resize:none; padding:12px 14px; background:transparent; color:var(--text); font-size:14px; line-height:1.6;
+  }
+  .muted{color:var(--muted)}
+  .timestamp{font-size:12px; color:var(--muted)}
+  /* モーダル（インポート用だけ残す） */
+  .modal-backdrop{position:fixed; inset:0; background:rgba(0,0,0,.65); display:none; align-items:center; justify-content:center; z-index:50;}
+  .modal{background:var(--panel); border:1px solid var(--border); border-radius:12px; width:min(560px, 92vw); padding:16px}
+  .modal h3{margin:.2rem 0 .8rem}
+  .modal .row{display:flex; gap:.5rem; margin:.5rem 0}
+  .modal input[type="file"]{flex:1; padding:.5rem .6rem; border-radius:8px; border:1px solid var(--border); background:var(--panel2); color:var(--text);}
+  .hidden{display:none}
+  /* スクロール */
+  ::-webkit-scrollbar{height:10px; width:10px}
+  ::-webkit-scrollbar-thumb{background:#27334e; border-radius:10px}
+  ::-webkit-scrollbar-track{background:#141a24}
+  @media (max-width: 900px){
+    .layout{grid-template-columns: 1fr; grid-auto-rows:minmax(200px, auto)}
+    .panel{min-height:220px}
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1>フォルダ付きメモ帳</h1>
+    <span class="badge" id="saveStatus">読み込み中…</span>
+    <div class="spacer"></div>
+    <button class="btn" id="saveBtn" title="すぐ保存">💾 保存</button>
+    <button class="btn" id="exportBtn" title="バックアップJSONを書き出し">⤓ エクスポート</button>
+    <button class="btn" id="importBtn" title="バックアップJSONを読み込み">⤒ インポート</button>
+  </header>
+
+  <main class="layout">
+    <!-- フォルダ -->
+    <section class="panel" id="foldersPanel">
+      <h2>フォルダ</h2>
+      <div class="toolbar">
+        <button class="btn primary" id="addFolderBtn">＋ フォルダ</button>
+      </div>
+      <div class="content">
+        <ul id="folderList" class="list reorder-list" data-type="folder"></ul>
+      </div>
+    </section>
+
+    <!-- ノート一覧 -->
+    <section class="panel" id="notesPanel">
+      <h2>ノート</h2>
+      <div class="toolbar">
+        <button class="btn primary" id="addNoteBtn">＋ ノート</button>
+        <input id="searchNotes" class="btn ghost" style="flex:1; text-align:left" placeholder="検索（タイトル）" />
+      </div>
+      <div class="content">
+        <ul id="noteList" class="list reorder-list" data-type="note"></ul>
+      </div>
+    </section>
+
+    <!-- エディタ -->
+    <section class="panel editor" id="editorPanel">
+      <h2>エディタ</h2>
+      <div class="field">
+        <label class="muted">タイトル</label>
+        <input type="text" id="noteTitle" placeholder="無題のノート" />
+        <span class="timestamp" id="timestamps"></span>
+      </div>
+      <textarea id="noteBody" placeholder="ここに本文を入力…"></textarea>
+    </section>
+  </main>
+
+  <!-- インポートモーダル -->
+  <div class="modal-backdrop" id="importModal">
+    <div class="modal">
+      <h3>インポート（バックアップJSON）</h3>
+      <div class="row"><input type="file" id="importFile" accept="application/json"></div>
+      <div class="row" style="justify-content:flex-end; gap:.5rem">
+        <button class="btn" id="importCancel">キャンセル</button>
+        <button class="btn primary" id="importOk">読み込む</button>
+      </div>
+      <div class="muted">読み込むと現在のデータは上書きされます。</div>
+    </div>
+  </div>
+
+<script>
+/* =========================
+   データモデル / アプリ状態
+   ========================= */
+const DB_NAME = 'MemoFoldersDB_plain';
+const STORE = 'state';
+const STATE_ID = 'main';
+
+let appState = null; // {folders:[], selectedFolderId, selectedNoteId, ...}
+let autoSaveTimer = null;
+
+const $ = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+
+function now(){return Date.now()}
+function fmt(ts){ if(!ts) return ''; const d=new Date(ts); const z=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())} ${z(d.getHours())}:${z(d.getMinutes())}`; }
+function uuid(){ return (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Math.random().toString(36).slice(2) + Date.now()) }
+function markDirty(){ $('#saveStatus').textContent = '未保存…'; }
+function markSaved(){ $('#saveStatus').textContent = '保存済 ' + fmt(now()); }
+function debounceSave(){ markDirty(); if(autoSaveTimer) clearTimeout(autoSaveTimer); autoSaveTimer = setTimeout(()=>saveState().catch(console.error), 500); }
+
+/* ===================
+   IndexedDB ラッパー
+   =================== */
+function openDB(){
+  return new Promise((resolve, reject)=>{
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = ()=>{
+      const db = req.result;
+      if(!db.objectStoreNames.contains(STORE)){
+        db.createObjectStore(STORE, { keyPath:'id' });
+      }
+    };
+    req.onsuccess = ()=>resolve(req.result);
+    req.onerror = ()=>reject(req.error);
+  });
+}
+async function idbGet(){
+  const db = await openDB();
+  return new Promise((resolve, reject)=>{
+    const tx = db.transaction(STORE,'readonly');
+    const st = tx.objectStore(STORE);
+    const req = st.get(STATE_ID);
+    req.onsuccess = ()=>resolve(req.result || null);
+    req.onerror = ()=>reject(req.error);
+  });
+}
+async function idbPut(record){
+  const db = await openDB();
+  return new Promise((resolve, reject)=>{
+    const tx = db.transaction(STORE,'readwrite');
+    const st = tx.objectStore(STORE);
+    const req = st.put(record);
+    req.onsuccess = ()=>resolve();
+    req.onerror = ()=>reject(req.error);
+  });
+}
+
+/* ==================
+   初期化 / 自動ロード
+   ================== */
+function emptyState(){
+  return {
+    version: 1,
+    createdAt: now(),
+    lastSaved: now(),
+    selectedFolderId: null,
+    selectedNoteId: null,
+    folders: []
+  };
+}
+
+async function boot(){
+  const rec = await idbGet();
+  if(rec && rec.state){
+    appState = rec.state;
+  }else{
+    appState = emptyState();
+    await saveState();
+  }
+  renderAll();
+  markSaved();
+}
+window.addEventListener('load', boot);
+
+/* ================
+   保存 / バックアップ
+   ================ */
+async function saveState(){
+  const rec = { id: STATE_ID, savedAt: now(), state: { ...appState, lastSaved: now() } };
+  await idbPut(rec);
+  markSaved();
+}
+$('#saveBtn').onclick = ()=>saveState().catch(console.error);
+
+// エクスポート（平文JSON）
+$('#exportBtn').onclick = async ()=>{
+  const rec = await idbGet();
+  if(!rec){ alert('エクスポートするデータがありません。'); return; }
+  const blob = new Blob([JSON.stringify(rec.state, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.download = `NotesBackup_${new Date().toISOString().replace(/[:.]/g,'-')}.json`;
+  a.href = URL.createObjectURL(blob);
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+
+// インポート（平文JSON）
+$('#importBtn').onclick = ()=>{$('#importModal').style.display='flex'};
+$('#importCancel').onclick = ()=>{$('#importModal').style.display='none'};
+$('#importOk').onclick = async ()=>{
+  try{
+    const file = $('#importFile').files[0];
+    if(!file){ alert('ファイルを選択してください。'); return; }
+    const text = await file.text();
+    const state = JSON.parse(text);
+    appState = state;
+    await saveState();
+    $('#importModal').style.display='none';
+    renderAll();
+  }catch(e){ console.error(e); alert('インポートに失敗しました。'); }
+};
+
+/* ==============
+   レンダリング
+   ==============
+*/
+function renderAll(){
+  renderFolders();
+  renderNotes();
+  renderEditor();
+}
+
+function renderFolders(){
+  const ul = $('#folderList'); ul.innerHTML='';
+  if(!appState || !appState.folders) return;
+  for(const f of appState.folders){
+    const li = document.createElement('li');
+    li.className = 'item' + (f.id===appState.selectedFolderId ? ' active':'');
+    li.dataset.id = f.id;
+    li.innerHTML = `
+      <span class="name" title="クリックで選択 / ダブルクリックで名前変更">${escapeHtml(f.name||'無題フォルダ')}</span>
+      <div class="actions">
+        <button class="icon-btn rename" title="名前変更">✏️</button>
+        <button class="icon-btn del" title="削除">🗑</button>
+        <button class="handle" draggable="true" title="ドラッグで並べ替え">☰</button>
+      </div>`;
+    ul.appendChild(li);
+  }
+  attachFolderEvents();
+}
+
+function renderNotes(){
+  const ul = $('#noteList'); ul.innerHTML='';
+  const folder = appState.folders.find(f=>f.id===appState.selectedFolderId);
+  const q = ($('#searchNotes').value||'').trim().toLowerCase();
+  let notes = folder ? folder.notes : [];
+  if(q) notes = notes.filter(n=> (n.title||'').toLowerCase().includes(q));
+  for(const n of notes){
+    const li = document.createElement('li');
+    li.className = 'item' + (n.id===appState.selectedNoteId ? ' active':'');
+    li.dataset.id = n.id;
+    li.innerHTML = `
+      <span class="name" title="クリックで選択 / ダブルクリックで名前変更">${escapeHtml(n.title||'無題のノート')}</span>
+      <div class="actions">
+        <button class="icon-btn rename" title="名前変更">✏️</button>
+        <button class="icon-btn del" title="削除">🗑</button>
+        <button class="handle" draggable="true" title="ドラッグで並べ替え">☰</button>
+      </div>`;
+    ul.appendChild(li);
+  }
+  attachNoteEvents();
+}
+
+function renderEditor(){
+  const note = getCurrentNote();
+  $('#noteTitle').value = note ? (note.title||'') : '';
+  $('#noteBody').value = note ? (note.body||'') : '';
+  $('#noteTitle').disabled = !note;
+  $('#noteBody').disabled = !note;
+  $('#timestamps').textContent = note ? `作成:${fmt(note.createdAt)} / 更新:${fmt(note.updatedAt)}` : '';
+}
+
+/* ==========
+   操作系
+   ==========
+*/
+$('#addFolderBtn').onclick = ()=>{
+  const f = { id:uuid(), name:'新しいフォルダ', notes:[], createdAt:now(), updatedAt:now() };
+  appState.folders.push(f);
+  appState.selectedFolderId = f.id;
+  appState.selectedNoteId = null;
+  renderFolders(); renderNotes(); renderEditor();
+  debounceSave();
+};
+$('#addNoteBtn').onclick = ()=>{
+  const folder = ensureFolderSelected();
+  if(!folder){ alert('先にフォルダを作成してください。'); return; }
+  const n = { id:uuid(), title:'新しいノート', body:'', createdAt:now(), updatedAt:now() };
+  folder.notes.push(n);
+  appState.selectedNoteId = n.id;
+  renderNotes(); renderEditor();
+  debounceSave();
+};
+$('#searchNotes').oninput = ()=>renderNotes();
+
+$('#noteTitle').addEventListener('input', ()=>{
+  const note = getCurrentNote(); if(!note) return;
+  note.title = $('#noteTitle').value; note.updatedAt=now(); renderNotes(); debounceSave();
+});
+$('#noteBody').addEventListener('input', ()=>{
+  const note = getCurrentNote(); if(!note) return;
+  note.body = $('#noteBody').value; note.updatedAt=now(); debounceSave();
+});
+
+/* クリック/リネーム/削除（フォルダ） */
+function attachFolderEvents(){
+  $$('#folderList .item .name').forEach(el=>{
+    el.onclick = (e)=>{
+      const id = e.currentTarget.closest('.item').dataset.id;
+      appState.selectedFolderId = id;
+      const folder = appState.folders.find(f=>f.id===id);
+      appState.selectedNoteId = (folder && folder.notes[0]) ? folder.notes[0].id : null;
+      renderFolders(); renderNotes(); renderEditor();
+    };
+    el.ondblclick = (e)=>inlineRename(e.currentTarget, 'folder');
+  });
+  $$('#folderList .item .rename').forEach(btn=>{
+    btn.onclick = (e)=> inlineRename(e.currentTarget.closest('.item').querySelector('.name'), 'folder');
+  });
+  $$('#folderList .item .del').forEach(btn=>{
+    btn.onclick = (e)=>{
+      const li = e.currentTarget.closest('.item'); const id = li.dataset.id;
+      const f = appState.folders.find(x=>x.id===id);
+      if(!confirm(`フォルダ「${f.name}」を削除しますか？（中のノートも削除されます）`)) return;
+      appState.folders = appState.folders.filter(x=>x.id!==id);
+      if(appState.selectedFolderId===id){ appState.selectedFolderId=null; appState.selectedNoteId=null; }
+      renderFolders(); renderNotes(); renderEditor(); debounceSave();
+    };
+  });
+  makeReorderable($('#folderList'), 'folder');
+}
+
+/* クリック/リネーム/削除（ノート） */
+function attachNoteEvents(){
+  $$('#noteList .item .name').forEach(el=>{
+    el.onclick = (e)=>{
+      const id = e.currentTarget.closest('.item').dataset.id;
+      appState.selectedNoteId = id;
+      renderNotes(); renderEditor();
+    };
+    el.ondblclick = (e)=>inlineRename(e.currentTarget, 'note');
+  });
+  $$('#noteList .item .rename').forEach(btn=>{
+    btn.onclick = (e)=> inlineRename(e.currentTarget.closest('.item').querySelector('.name'), 'note');
+  });
+  $$('#noteList .item .del').forEach(btn=>{
+    btn.onclick = (e)=>{
+      const li = e.currentTarget.closest('.item'); const id = li.dataset.id;
+      const folder = ensureFolderSelected();
+      const n = folder.notes.find(x=>x.id===id);
+      if(!confirm(`ノート「${n.title}」を削除しますか？`)) return;
+      folder.notes = folder.notes.filter(x=>x.id!==id);
+      if(appState.selectedNoteId===id){ appState.selectedNoteId = (folder.notes[0]?.id) || null; }
+      renderNotes(); renderEditor(); debounceSave();
+    };
+  });
+  makeReorderable($('#noteList'), 'note');
+}
+
+/* インラインリネーム */
+function inlineRename(nameEl, type){
+  const li = nameEl.closest('.item');
+  const id = li.dataset.id;
+  const orig = nameEl.textContent;
+  const input = document.createElement('input');
+  input.type = 'text'; input.value = orig; input.style.width = '100%';
+  nameEl.replaceWith(input); input.focus(); input.select();
+  function commit(apply){
+    const val = input.value.trim();
+    const span = document.createElement('span');
+    span.className='name'; span.title='クリックで選択 / ダブルクリックで名前変更';
+    if(apply && val){
+      span.textContent = val;
+      if(type==='folder'){
+        const f = appState.folders.find(f=>f.id===id);
+        f.name = val; f.updatedAt=now(); debounceSave();
+      }else{
+        const n = findNoteById(id);
+        n.title = val; n.updatedAt=now(); debounceSave();
+      }
+    }else{ span.textContent = orig; }
+    span.onclick = (e)=>{
+      if(type==='folder'){
+        appState.selectedFolderId = id;
+        const folder = appState.folders.find(f=>f.id===id);
+        appState.selectedNoteId = (folder.notes[0]?.id)||null;
+        renderFolders(); renderNotes(); renderEditor();
+      }else{
+        appState.selectedNoteId = id; renderNotes(); renderEditor();
+      }
+    };
+    span.ondblclick = ()=>inlineRename(span, type);
+    input.replaceWith(span);
+  }
+  input.addEventListener('keydown', (e)=>{ if(e.key==='Enter') commit(true); if(e.key==='Escape') commit(false); });
+  input.addEventListener('blur', ()=>commit(true));
+}
+
+/* ==========
+   並べ替え
+   ==========
+*/
+function makeReorderable(listEl, type){
+  let draggingEl = null;
+  let dragType = null;
+  listEl.querySelectorAll('.handle').forEach(h=>{
+    h.addEventListener('dragstart', (e)=>{
+      draggingEl = e.currentTarget.closest('.item');
+      dragType = type;
+      draggingEl.classList.add('dragging');
+      const img = draggingEl.cloneNode(true);
+      img.style.position='absolute'; img.style.top='-9999px'; img.style.left='-9999px'; document.body.appendChild(img);
+      e.dataTransfer.setDragImage(img, img.offsetWidth-10, 10);
+      setTimeout(()=>document.body.removeChild(img),0);
+      e.dataTransfer.effectAllowed='move';
+    });
+    h.addEventListener('dragend', ()=>{
+      if(!draggingEl) return;
+      draggingEl.classList.remove('dragging');
+      const ids = Array.from(listEl.children).map(li=>li.dataset.id);
+      applyNewOrder(type, ids);
+      draggingEl = null; dragType = null;
+      debounceSave();
+    });
+  });
+  listEl.addEventListener('dragover', (e)=>{
+    e.preventDefault();
+    if(!draggingEl || dragType!==type) return;
+    const afterEl = getDragAfterElement(listEl, e.clientY);
+    if(afterEl==null) listEl.appendChild(draggingEl);
+    else listEl.insertBefore(draggingEl, afterEl);
+  });
+  listEl.addEventListener('drop', (e)=>{ e.preventDefault(); });
+}
+
+function getDragAfterElement(list, y){
+  const items = [...list.querySelectorAll('.item:not(.dragging)')];
+  let closest = {offset: Number.NEGATIVE_INFINITY, element: null};
+  for(const child of items){
+    const box = child.getBoundingClientRect();
+    const offset = y - box.top - box.height/2;
+    if(offset < 0 && offset > closest.offset){ closest = {offset, element:child}; }
+  }
+  return closest.element;
+}
+
+function applyNewOrder(type, ids){
+  if(type==='folder'){
+    const map = new Map(appState.folders.map(f=>[f.id, f]));
+    appState.folders = ids.map(id=>map.get(id)).filter(Boolean);
+    renderFolders();
+  }else{
+    const folder = ensureFolderSelected();
+    if(!folder) return;
+    const map = new Map(folder.notes.map(n=>[n.id,n]));
+    folder.notes = ids.map(id=>map.get(id)).filter(Boolean);
+    renderNotes();
+  }
+}
+
+/* ==========
+   取得系
+   ==========
+*/
+function ensureFolderSelected(){
+  let folder = appState.folders.find(f=>f.id===appState.selectedFolderId);
+  if(!folder && appState.folders[0]){ folder = appState.folders[0]; appState.selectedFolderId = folder.id; }
+  return folder;
+}
+function getCurrentNote(){
+  const f = ensureFolderSelected(); if(!f) return null;
+  let note = f.notes.find(n=>n.id===appState.selectedNoteId);
+  if(!note && f.notes[0]){ note = f.notes[0]; appState.selectedNoteId = note.id; }
+  return note||null;
+}
+function findNoteById(id){
+  for(const f of appState.folders){ const n = f.notes.find(x=>x.id===id); if(n) return n; }
+  return null;
+}
+
+/* ==========
+   HTMLエスケープ
+   ==========
+*/
+function escapeHtml(s){ return (s??'').replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
+</script>
+</body>
+</html>
