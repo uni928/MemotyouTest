@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>メモ帳</title>
+  <meta name="color-scheme" content="light dark">
+  <style>
+    :root {
+      --bg: radial-gradient(1200px 800px at 100% -10%, #c7d2fe55, transparent 60%),
+            radial-gradient(900px 700px at -10% 120%, #fbcfe855, transparent 60%),
+            linear-gradient(180deg, #f8fafc, #f1f5f9);
+      --card: color-mix(in oklch, white 80%, #e2e8f0);
+      --text: #0f172a;
+      --muted: #475569;
+      --accent: #6366f1; /* indigo */
+      --accent-2: #22c55e; /* green */
+      --ring: #a5b4fc77;
+      --shadow: 0 10px 30px rgba(2,6,23,.08), 0 2px 6px rgba(2,6,23,.06);
+      --radius: 18px;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: radial-gradient(1200px 800px at 100% -10%, #3730a355, transparent 60%),
+              radial-gradient(900px 700px at -10% 120%, #9f123955, transparent 60%),
+              linear-gradient(180deg, #0b1220, #0a0f1a);
+        --card: color-mix(in oklch, #0b1220 85%, #1f2937);
+        --text: #e5e7eb;
+        --muted: #94a3b8;
+        --accent: #818cf8;
+        --accent-2: #34d399;
+        --ring: #4f46e577;
+        --shadow: 0 12px 32px rgba(0,0,0,.35), 0 2px 6px rgba(0,0,0,.3);
+      }
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Noto Sans JP, "Hiragino Kaku Gothic ProN", Meiryo, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      color: var(--text);
+      background: var(--bg);
+      backdrop-filter: saturate(120%) blur(0.5px);
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* App Shell */
+    .app { display: grid; place-items: stretch; height: 100dvh; }
+    .view { display: none; height: 100%; }
+    .view.active { display: grid; grid-template-rows: auto 1fr; }
+
+    /* Topbars */
+    .topbar {
+      display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px;
+      padding: 14px 16px; position: sticky; top: 0; z-index: 10;
+      background: color-mix(in oklch, var(--card) 92%, transparent);
+      backdrop-filter: blur(8px) saturate(120%);
+      box-shadow: 0 1px 0 rgba(148,163,184,.25);
+    }
+    .topbar h1, .topbar .title-input { margin: 0; font-weight: 700; letter-spacing: .2px; }
+    .topbar h1 { font-size: clamp(16px, 2.2vw, 20px); opacity: .9; }
+
+    /* Buttons */
+    .btn { appearance: none; border: 0; background: var(--card); color: var(--text);
+      padding: 10px 12px; border-radius: 12px; cursor: pointer; box-shadow: var(--shadow);
+      display: inline-grid; place-items: center; transition: transform .05s ease, filter .2s ease, background .2s ease;
+    }
+    .btn:active { transform: translateY(1px) scale(0.99); filter: brightness(.98); }
+    .btn.ghost { background: color-mix(in oklch, var(--card) 75%, transparent); box-shadow: none; }
+    .btn.primary { background: linear-gradient(180deg, var(--accent), color-mix(in oklch, var(--accent) 75%, black)); color: #fff; }
+
+    /* Icons */
+    .icon { width: 22px; height: 22px; display: block; }
+
+    /* List View */
+    #listView main { padding: 18px; }
+    .search-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; margin: 4px 2px 14px; }
+    .search { width: 100%; padding: 12px 14px; border-radius: 12px; border: 1px solid rgba(100,116,139,.25);
+      outline: none; background: var(--card); color: var(--text); box-shadow: var(--shadow);
+    }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+    .card { background: var(--card); border-radius: var(--radius); padding: 14px; box-shadow: var(--shadow);
+      display: grid; gap: 8px; cursor: pointer; position: relative; overflow: hidden; border: 1px solid rgba(100,116,139,.18);
+    }
+    .card:hover { outline: 2px solid var(--ring); }
+    .card h3 { margin: 0; font-size: 16px; font-weight: 700; }
+    .preview { color: var(--muted); font-size: 13px; line-height: 1.45; max-height: 3.6em; overflow: hidden; }
+    .meta { color: var(--muted); font-size: 12px; display: flex; gap: 8px; align-items: center; }
+
+    /* FAB */
+    .fab {
+      position: fixed; right: 18px; bottom: 18px; width: 60px; height: 60px; border-radius: 50%;
+      display: grid; place-items: center; box-shadow: var(--shadow);
+      background: linear-gradient(180deg, var(--accent-2), color-mix(in oklch, var(--accent-2) 80%, black));
+      color: white; font-size: 30px; line-height: 1; user-select: none;
+    }
+
+    /* Editor */
+    #editorView main { display: grid; grid-template-rows: auto 1fr; height: calc(100dvh - 58px); }
+    .title-input { width: 100%; font-size: 18px; font-weight: 700; padding: 10px 12px; border-radius: 12px;
+      border: 1px solid rgba(100,116,139,.25); background: var(--card); box-shadow: var(--shadow); outline: none; }
+    .content-wrap { padding: 14px; }
+    .content {
+      width: 100%; height: 100%; resize: none; border: 1px solid rgba(100,116,139,.25);
+      padding: 14px 16px; border-radius: 14px; background: var(--card); color: var(--text);
+      font-size: 15px; line-height: 1.7; outline: none; box-shadow: var(--shadow);
+    }
+
+    /* Hamburger menu */
+    .menu { position: relative; }
+    .menu-panel { position: absolute; right: 0; top: calc(100% + 8px); min-width: 180px; background: var(--card);
+      border: 1px solid rgba(100,116,139,.25); border-radius: 12px; padding: 8px; box-shadow: var(--shadow);
+      display: none; z-index: 20; }
+    .menu.open .menu-panel { display: grid; gap: 6px; }
+    .menu-item { display: grid; grid-auto-flow: column; grid-template-columns: 22px 1fr; gap: 8px; align-items: center;
+      padding: 8px 10px; border-radius: 10px; cursor: pointer; color: var(--text); }
+    .menu-item:hover { background: color-mix(in oklch, var(--accent) 12%, transparent); }
+    .danger { color: #ef4444; }
+
+    /* Empty state */
+    .empty { text-align: center; color: var(--muted); padding: 36px 8px; }
+
+    /* Utility */
+    .hidden { display: none !important; }
+    .muted { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <!-- List View -->
+    <section id="listView" class="view active" aria-label="メモ一覧">
+      <header class="topbar">
+        <button id="refreshBtn" class="btn ghost" title="更新">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 12a9 9 0 1 1-3.5-7.1"/><path d="M21 3v7h-7"/></svg>
+        </button>
+        <h1>メモ</h1>
+        <div class="menu" id="listMenu">
+          <button id="listMenuBtn" class="btn ghost" aria-haspopup="menu" aria-expanded="false" title="メニュー">
+            <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
+          </button>
+          <div class="menu-panel" role="menu">
+            <div class="menu-item" id="listExportBtn" role="menuitem">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3v12"/><path d="M8 7l4-4 4 4"/><rect x="4" y="15" width="16" height="6" rx="2"/></svg>
+              <span>全メモを書き出し（JSON）</span>
+            </div>
+            <div class="menu-item" id="listImportBtn" role="menuitem">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 21V9"/><path d="M16 17l-4 4-4-4"/><rect x="4" y="3" width="16" height="6" rx="2"/></svg>
+              <span>全メモを読み込み（JSON）</span>
+            </div>
+          </div>
+        </div>
+      </header>
+      <main>
+        <div class="search-row">
+          <input id="search" class="search" placeholder="検索（タイトル・本文）" aria-label="検索" />
+          <span class="muted" id="countLabel">0件</span>
+        </div>
+        <div id="grid" class="grid" role="list"></div>
+        <p class="empty" id="emptyState">まだメモがありません。右下の + ボタンで作成しましょう。</p>
+      </main>
+      <button id="fab" class="fab" title="新規メモ">＋</button>
+    </section>
+
+    <!-- Editor View -->
+    <section id="editorView" class="view" aria-label="メモ編集">
+      <header class="topbar">
+        <button id="backBtn" class="btn ghost" title="戻る">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M15 18l-6-6 6-6"/></svg>
+        </button>
+        <input id="titleInput" class="title-input" placeholder="無題のメモ" />
+        <div class="menu" id="menu">
+          <button id="menuBtn" class="btn ghost" aria-haspopup="menu" aria-expanded="false" title="メニュー">
+            <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
+          </button>
+          <div class="menu-panel" role="menu">
+            <div class="menu-item" id="duplicateBtn" role="menuitem">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="9" y="9" width="10" height="10" rx="2"/><rect x="5" y="5" width="10" height="10" rx="2"/></svg>
+              <span>複製</span>
+            </div>
+            <div class="menu-item" id="exportBtn" role="menuitem">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3v12"/><path d="M8 7l4-4 4 4"/><rect x="4" y="15" width="16" height="6" rx="2"/></svg>
+              <span>テキストとして書き出し</span>
+            </div>
+            <div class="menu-item danger" id="deleteBtn" role="menuitem">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 6h18"/><path d="M8 6v14a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6"/><path d="M10 6l1-2h2l1 2"/></svg>
+              <span>削除</span>
+            </div>
+          </div>
+        </div>
+      </header>
+      <main>
+        <div class="content-wrap">
+          <textarea id="content" class="content" placeholder="ここに本文を入力…"></textarea>
+        </div>
+      </main>
+    </section>
+  </div>
+<input type="file" id="importInput" accept="application/json" class="hidden" />
+  <script>
+    // -------------------- IndexedDB 基盤 --------------------
+    const DB_NAME = 'beautiful-notes-db';
+    const DB_VERSION = 1;
+    const STORE_NOTES = 'notes';
+    const STORE_META = 'meta';
+
+    function openDB() {
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open(DB_NAME, DB_VERSION);
+        req.onupgradeneeded = (e) => {
+          const db = e.target.result;
+          if (!db.objectStoreNames.contains(STORE_NOTES)) {
+            const notes = db.createObjectStore(STORE_NOTES, { keyPath: 'id' });
+            notes.createIndex('updatedAt', 'updatedAt');
+            notes.createIndex('title', 'title');
+          }
+          if (!db.objectStoreNames.contains(STORE_META)) {
+            db.createObjectStore(STORE_META, { keyPath: 'key' });
+          }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    function tx(db, store, mode = 'readonly') { return db.transaction(store, mode).objectStore(store); }
+
+    async function dbGet(store, key) {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+        const r = tx(db, store).get(key);
+        r.onsuccess = () => resolve(r.result);
+        r.onerror = () => reject(r.error);
+      });
+    }
+
+    async function dbPut(store, value) {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+        const r = tx(db, store, 'readwrite').put(value);
+        r.onsuccess = () => resolve(value);
+        r.onerror = () => reject(r.error);
+      });
+    }
+
+    async function dbDelete(store, key) {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+        const r = tx(db, store, 'readwrite').delete(key);
+        r.onsuccess = () => resolve();
+        r.onerror = () => reject(r.error);
+      });
+    }
+
+    async function dbGetAll(store) {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+        const r = tx(db, store).getAll();
+        r.onsuccess = () => resolve(r.result);
+        r.onerror = () => reject(r.error);
+      });
+    }
+
+    async function dbClear(store) {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+        const r = tx(db, store, 'readwrite').clear();
+        r.onsuccess = () => resolve();
+        r.onerror = () => reject(r.error);
+      });
+    }
+
+    // -------------------- ユーティリティ --------------------
+    const $ = (sel) => document.querySelector(sel);
+    const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+    const fmt = (d) => new Intl.DateTimeFormat('ja-JP', { dateStyle: 'medium', timeStyle: 'short' }).format(d);
+    const uid = () => crypto.randomUUID();
+    const debounce = (fn, ms = 400) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
+
+    // -------------------- アプリ状態 --------------------
+    let state = {
+      view: 'list', // 'list' | 'edit'
+      activeNoteId: null,
+      notes: []
+    };
+
+    async function saveMeta() {
+      await dbPut(STORE_META, { key: 'appState', value: { view: state.view, activeNoteId: state.activeNoteId } });
+    }
+
+    async function loadMeta() {
+      const rec = await dbGet(STORE_META, 'appState');
+      return rec?.value || { view: 'list', activeNoteId: null };
+    }
+
+    // -------------------- ノート CRUD --------------------
+    async function createNote({ title = '新しいメモ', content = '' } = {}) {
+      const now = Date.now();
+      const note = { id: uid(), title, content, createdAt: now, updatedAt: now };
+      await dbPut(STORE_NOTES, note);
+      return note;
+    }
+
+    async function updateNote(id, patch) {
+      const current = state.notes.find(n => n.id === id) || await dbGet(STORE_NOTES, id);
+      if (!current) return;
+      const updated = { ...current, ...patch, updatedAt: Date.now() };
+      await dbPut(STORE_NOTES, updated);
+      // ローカル状態更新
+      const idx = state.notes.findIndex(n => n.id === id);
+      if (idx >= 0) state.notes[idx] = updated; else state.notes.push(updated);
+      return updated;
+    }
+
+    async function deleteNote(id) {
+      await dbDelete(STORE_NOTES, id);
+      state.notes = state.notes.filter(n => n.id !== id);
+    }
+
+    async function loadNotes() {
+      const all = await dbGetAll(STORE_NOTES);
+      state.notes = all.sort((a,b) => b.updatedAt - a.updatedAt);
+    }
+
+    // -------------------- ビュー制御 --------------------
+    function showView(name) {
+      state.view = name;
+      $('#listView').classList.toggle('active', name === 'list');
+      $('#editorView').classList.toggle('active', name === 'edit');
+      saveMeta();
+    }
+
+    async function openEditor(id) {
+      state.activeNoteId = id; await saveMeta();
+      const note = state.notes.find(n => n.id === id) || await dbGet(STORE_NOTES, id);
+      if (!note) return;
+      $('#titleInput').value = note.title || '';
+      $('#content').value = note.content || '';
+      showView('edit');
+      autosizeContent();
+    }
+
+    function autosizeContent() {
+      const el = $('#content');
+      el.style.height = 'auto';
+      el.style.height = Math.max(220, el.scrollHeight) + 'px';
+    }
+
+    function renderList(filter = '') {
+      const grid = $('#grid');
+      grid.innerHTML = '';
+      const q = filter.trim().toLowerCase();
+      const items = state.notes.filter(n => {
+        if (!q) return true;
+        return (n.title || '').toLowerCase().includes(q) || (n.content || '').toLowerCase().includes(q);
+      });
+      $('#countLabel').textContent = items.length + '件';
+      $('#emptyState').classList.toggle('hidden', items.length > 0);
+
+      for (const n of items) {
+        const card = document.createElement('article');
+        card.className = 'card'; card.role = 'listitem';
+        card.innerHTML = `
+          <h3>${escapeHtml(n.title || '無題')}</h3>
+          <div class="preview">${escapeHtml((n.content || '').slice(0, 200))}</div>
+          <div class="meta">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 2v4"/><path d="M16 2v4"/><rect x="3" y="6" width="18" height="14" rx="2"/><path d="M3 10h18"/></svg>
+            <span>${fmt(new Date(n.updatedAt))}</span>
+          </div>
+        `;
+        card.addEventListener('click', () => openEditor(n.id));
+        grid.appendChild(card);
+      }
+    }
+
+    function escapeHtml(s) {
+      return (s + '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));
+    }
+
+    // -------------------- イベント配線 --------------------
+    $('#fab').addEventListener('click', async () => {
+      const note = await createNote({});
+      await loadNotes();
+      renderList($('#search').value);
+      openEditor(note.id);
+    });
+
+    $('#refreshBtn').addEventListener('click', async () => {
+      await loadNotes(); renderList($('#search').value);
+    });
+
+    $('#search').addEventListener('input', (e) => renderList(e.target.value));
+
+    $('#backBtn').addEventListener('click', () => {
+      state.activeNoteId = null; saveMeta();
+      showView('list');
+      loadNotes().then(() => renderList($('#search').value));
+    });
+
+    // List hamburger menu toggle
+    const listMenu = $('#listMenu');
+    $('#listMenuBtn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      listMenu.classList.toggle('open');
+      $('#listMenuBtn').setAttribute('aria-expanded', listMenu.classList.contains('open'));
+    });
+
+    // Editor hamburger menu toggle
+    const menu = $('#menu');
+    $('#menuBtn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      menu.classList.toggle('open');
+      $('#menuBtn').setAttribute('aria-expanded', menu.classList.contains('open'));
+    });
+
+    // Close any menu on outside click
+    document.addEventListener('click', () => { menu.classList.remove('open'); listMenu.classList.remove('open'); });
+
+    // Menu actions (editor)
+    $('#deleteBtn').addEventListener('click', async () => {
+      if (!state.activeNoteId) return;
+      if (!confirm('このメモを削除しますか？')) return;
+      await deleteNote(state.activeNoteId);
+      state.activeNoteId = null; await saveMeta();
+      showView('list');
+      await loadNotes(); renderList($('#search').value);
+    });
+
+    $('#duplicateBtn').addEventListener('click', async () => {
+      const src = await dbGet(STORE_NOTES, state.activeNoteId);
+      if (!src) return;
+      const copy = await createNote({ title: src.title + '（複製）', content: src.content });
+      await loadNotes(); renderList($('#search').value);
+      openEditor(copy.id);
+    });
+
+    $('#exportBtn').addEventListener('click', async () => {
+      const note = await dbGet(STORE_NOTES, state.activeNoteId);
+      if (!note) return;
+      const blob = new Blob([`# ${note.title}
+
+${note.content}`], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `${note.title || '無題'}.txt`;
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    });
+
+    // Menu actions (list): export/import all
+    $('#listExportBtn').addEventListener('click', async () => {
+      const payload = {
+        __type: 'beautiful-notes-export',
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        notes: await dbGetAll(STORE_NOTES),
+        meta: await dbGet(STORE_META, 'appState') || null,
+      };
+      const json = JSON.stringify(payload, null, 2);
+      const ts = new Date();
+      const pad = (n)=> String(n).padStart(2,'0');
+      const fname = `notes-${ts.getFullYear()}${pad(ts.getMonth()+1)}${pad(ts.getDate())}-${pad(ts.getHours())}${pad(ts.getMinutes())}.json`;
+      const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = fname; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+      listMenu.classList.remove('open');
+    });
+
+    $('#listImportBtn').addEventListener('click', () => {
+      $('#importInput').click();
+      listMenu.classList.remove('open');
+    });
+
+    // Hidden input handler
+    $('#importInput').addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      e.target.value = '';
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+        if (data.__type !== 'beautiful-notes-export' || !Array.isArray(data.notes)) {
+          alert('不正なファイル形式です。');
+          return;
+        }
+        const replace = confirm('読み込みます。OKで「置き換え」（全削除後に読込）、キャンセルで「追記/上書き」です。');
+        if (replace) {
+          await dbClear(STORE_NOTES);
+        }
+        // put notes
+        for (const n of data.notes) {
+          if (!n.id) n.id = crypto.randomUUID();
+          await dbPut(STORE_NOTES, n);
+        }
+        // meta（置き換え時のみ採用）
+        if (replace && data.meta) {
+          await dbPut(STORE_META, data.meta);
+        }
+        await loadNotes();
+        renderList($('#search').value);
+        if (replace && data.meta?.value?.activeNoteId && state.notes.some(n=>n.id===data.meta.value.activeNoteId)) {
+          openEditor(data.meta.value.activeNoteId);
+        } else {
+          showView('list');
+        }
+        alert('読み込みが完了しました。');
+      } catch (err) {
+        console.error(err);
+        alert('読み込みでエラーが発生しました。');
+      }
+    });
+
+    $('#search').addEventListener('keydown', (e)=>{ if(e.key==='Escape'){ e.target.value=''; renderList(''); }});
+
+    // Editor autosave
+    $('#titleInput').addEventListener('input', debounce(async (e) => {
+      if (!state.activeNoteId) return;
+      await updateNote(state.activeNoteId, { title: e.target.value });
+      await loadNotes(); renderList($('#search').value);
+    }, 350));
+
+    const handleContentInput = debounce(async () => {
+      if (!state.activeNoteId) return;
+      await updateNote(state.activeNoteId, { content: $('#content').value });
+      autosizeContent();
+    }, 350);
+    $('#content').addEventListener('input', handleContentInput);
+
+    // Resize observer to keep textarea comfy
+    window.addEventListener('resize', autosizeContent);
+
+    // -------------------- 初期化と再開 --------------------
+    (async function init() {
+      const meta = await loadMeta();
+      await loadNotes();
+      renderList('');
+      if (meta.activeNoteId && state.notes.some(n => n.id === meta.activeNoteId)) {
+        // 前回の状態に復帰（編集中のメモを再開）
+        await openEditor(meta.activeNoteId);
+      } else {
+        // 一覧から開始
+        showView('list');
+      }
+    })();
+  </script>
+</body>
+</html>
