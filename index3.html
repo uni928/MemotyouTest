@@ -35,7 +35,10 @@
     }
 
     * { box-sizing: border-box; }
-    html, body { height: 100%; }
+    html, body {
+  height: 100dvh;
+  overflow: hidden;
+}
     body {
       margin: 0;
       font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Noto Sans JP, "Hiragino Kaku Gothic ProN", Meiryo, Arial, "Apple Color Emoji", "Segoe UI Emoji";
@@ -108,14 +111,18 @@
 #editorView main {
   display: flex;
   flex-direction: column;
+  height: 90%;
+  min-height: 90dvh;
   width: 100dvw;
-  height: 90dvh;
+  min-width: 100dvw;
+  overflow: hidden;
 }
 
 .content-wrap {
   flex: 1;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   padding: 0 0px 0px;
 }
 
@@ -125,6 +132,8 @@
   width: 100%;
   height: 90%;
   resize: none;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch; /* スムーズスクロール */
 }
 
     .title-input { width: 100%; font-size: 18px; font-weight: 700; padding: 10px 12px; border-radius: 12px;
@@ -678,4 +687,3 @@ ${note.content}`], { type: 'text/plain;charset=utf-8' });
   </script>
 </body>
 </html>
-
