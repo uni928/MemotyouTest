@@ -14,7 +14,7 @@
       --text: #0f172a;
       --muted: #475569;
       --accent: #6366f1; /* indigo */
-      --accent-2: #22c55e; /* green */
+      --accent-2:https://chatgpt.com/gpts #22c55e; /* green */
       --ring: #a5b4fc77;
       --shadow: 0 10px 30px rgba(2,6,23,.08), 0 2px 6px rgba(2,6,23,.06);
       --radius: 18px;
@@ -104,15 +104,29 @@
     }
 
     /* Editor */
-    #editorView main { display: grid; grid-template-rows: auto 1fr; height: calc(100dvh - 58px); }
+    /* --- 追加または上書き --- */
+#editorView main {
+  display: flex;
+  flex-direction: column;
+  height: 90dvh;
+}
+
+.content-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 0 14px 14px;
+}
+
+.content {
+  flex: 1;
+  min-height: 0;
+  height: 90%;
+  resize: none;
+}
+
     .title-input { width: 100%; font-size: 18px; font-weight: 700; padding: 10px 12px; border-radius: 12px;
       border: 1px solid rgba(100,116,139,.25); background: var(--card); box-shadow: var(--shadow); outline: none; }
-    .content-wrap { padding: 14px; }
-    .content {
-      width: 100%; height: 100%; resize: none; border: 1px solid rgba(100,116,139,.25);
-      padding: 14px 16px; border-radius: 14px; background: var(--card); color: var(--text);
-      font-size: 15px; line-height: 1.7; outline: none; box-shadow: var(--shadow);
-    }
 
     /* Hamburger menu */
     .menu { position: relative; }
