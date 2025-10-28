@@ -82,7 +82,14 @@
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
     .card { background: var(--card); border-radius: var(--radius); padding: 14px; box-shadow: var(--shadow);
       display: grid; gap: 8px; cursor: pointer; position: relative; overflow: hidden; border: 1px solid rgba(100,116,139,.18);
-    }
+      touch-action: none; /* 長押しドラッグを扱うため */}
+    .card:hover { outline: 2px solid var(--ring); }
+    .card h3 { margin: 0; font-size: 16px; font-weight: 700; }
+    .preview { color: var(--muted); font-size: 13px; line-height: 1.45; max-height: 3.6em; overflow: hidden; }
+    .meta { color: var(--muted); font-size: 12px; display: flex; gap: 8px; align-items: center; }
+    .card.drag-origin { visibility: hidden; }
+    .ghost-card { position: fixed; left: 0; top: 0; width: 280px; pointer-events: none; z-index: 1000; opacity: .95; transform: scale(1.02); box-shadow: 0 16px 40px rgba(0,0,0,.2); }
+    .placeholder { border: 2px dashed color-mix(in oklch, var(--accent) 40%, transparent); border-radius: var(--radius); height: 120px; }
     .card:hover { outline: 2px solid var(--ring); }
     .card h3 { margin: 0; font-size: 16px; font-weight: 700; }
     .preview { color: var(--muted); font-size: 13px; line-height: 1.45; max-height: 3.6em; overflow: hidden; }
@@ -196,13 +203,15 @@
       </main>
     </section>
   </div>
-<input type="file" id="importInput" accept="application/json" class="hidden" />
+  <input type="file" id="importInput" accept="application/json" class="hidden" />
+
   <script>
     // -------------------- IndexedDB 基盤 --------------------
     const DB_NAME = 'beautiful-notes-db';
     const DB_VERSION = 1;
     const STORE_NOTES = 'notes';
     const STORE_META = 'meta';
+    const META_ORDER_KEY = 'order';
 
     function openDB() {
       return new Promise((resolve, reject) => {
@@ -319,7 +328,19 @@
 
     async function loadNotes() {
       const all = await dbGetAll(STORE_NOTES);
-      state.notes = all.sort((a,b) => b.updatedAt - a.updatedAt);
+      // 既存の並び順を取得
+      const orderRec = await dbGet(STORE_META, META_ORDER_KEY);
+      const order = orderRec?.value || [];
+      // orderに従って並べ、未登録は末尾をupdatedAt降順
+      const map = new Map(all.map(n=>[n.id,n]));
+      const ordered = [];
+      for (const id of order) { if (map.has(id)) { ordered.push(map.get(id)); map.delete(id);} }
+      const rest = Array.from(map.values()).sort((a,b)=> b.updatedAt - a.updatedAt);
+      state.notes = ordered.concat(rest);
+    }
+
+    async function saveOrder(ids) {
+      await dbPut(STORE_META, { key: META_ORDER_KEY, value: ids });
     }
 
     // -------------------- ビュー制御 --------------------
@@ -347,34 +368,131 @@
     }
 
     function renderList(filter = '') {
-      const grid = $('#grid');
-      grid.innerHTML = '';
-      const q = filter.trim().toLowerCase();
-      const items = state.notes.filter(n => {
-        if (!q) return true;
-        return (n.title || '').toLowerCase().includes(q) || (n.content || '').toLowerCase().includes(q);
-      });
-      $('#countLabel').textContent = items.length + '件';
-      $('#emptyState').classList.toggle('hidden', items.length > 0);
+  const grid = $('#grid');
+  grid.innerHTML = '';
 
-      for (const n of items) {
-        const card = document.createElement('article');
-        card.className = 'card'; card.role = 'listitem';
-        card.innerHTML = `
-          <h3>${escapeHtml(n.title || '無題')}</h3>
-          <div class="preview">${escapeHtml((n.content || '').slice(0, 200))}</div>
-          <div class="meta">
-            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 2v4"/><path d="M16 2v4"/><rect x="3" y="6" width="18" height="14" rx="2"/><path d="M3 10h18"/></svg>
-            <span>${fmt(new Date(n.updatedAt))}</span>
-          </div>
-        `;
-        card.addEventListener('click', () => openEditor(n.id));
-        grid.appendChild(card);
-      }
-    }
+  const q = (filter || '').trim().toLowerCase();
+  const items = state.notes.filter(n => {
+    if (!q) return true;
+    return (n.title || '').toLowerCase().includes(q)
+        || (n.content || '').toLowerCase().includes(q);
+  });
+
+  $('#countLabel').textContent = items.length + '件';
+  $('#emptyState').classList.toggle('hidden', items.length > 0);
+
+  for (const n of items) {
+    const card = document.createElement('article');
+    card.className = 'card';
+    card.role = 'listitem';
+    card.dataset.id = n.id;
+    card.innerHTML = `
+      <h3>${escapeHtml(n.title || '無題')}</h3>
+      <div class="preview">${escapeHtml((n.content || '').slice(0, 200))}</div>
+      <div class="meta">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+          <path d="M8 2v4"/><path d="M16 2v4"/><rect x="3" y="6" width="18" height="14" rx="2"/><path d="M3 10h18"/>
+        </svg>
+        <span>${fmt(new Date(n.updatedAt))}</span>
+      </div>
+    `;
+    card.addEventListener('click', () => openEditor(n.id));
+    grid.appendChild(card);
+  }
+
+  // 検索中は入れ替えを無効に（予期せぬ順序変更を避ける）
+  if (!q) {
+    enableReorder(grid);
+  }
+}
+
 
     function escapeHtml(s) {
       return (s + '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));
+    }
+
+    // -------------------- 並べ替え（長押しドラッグ） --------------------
+    function enableReorder(grid) {
+      const cards = Array.from(grid.querySelectorAll('.card'));
+      cards.forEach(card => attachLongPressDrag(card));
+
+      function attachLongPressDrag(card) {
+        let pressTimer = null, dragging = false, startX=0, startY=0, offsetX=0, offsetY=0;
+        let ghost = null, placeholder = null;
+
+        function onPointerDown(e){
+          if (e.button === 2) return; // 右クリック無効
+          startX = e.clientX; startY = e.clientY;
+          pressTimer = setTimeout(()=> startDrag(e), 320);
+          card.setPointerCapture?.(e.pointerId);
+        }
+        function cancelPress(){ if(pressTimer){ clearTimeout(pressTimer); pressTimer=null; } }
+        function onPointerUp(){
+          if (!dragging) { cancelPress(); return; }
+          finishDrag();
+        }
+        function onPointerMove(e){
+          if (!dragging){
+            // 長押し前に大きく動いたらキャンセル
+            if (pressTimer && (Math.abs(e.clientX-startX)>6 || Math.abs(e.clientY-startY)>6)) cancelPress();
+            return;
+          }
+          moveGhost(e.clientX, e.clientY);
+          placePlaceholder(e.clientX, e.clientY);
+        }
+
+        function startDrag(e){
+          dragging = true;
+          const rect = card.getBoundingClientRect();
+          ghost = card.cloneNode(true);
+          ghost.classList.add('ghost-card');
+          ghost.style.width = rect.width + 'px';
+          ghost.style.left = rect.left + 'px';
+          ghost.style.top = rect.top + 'px';
+          document.body.appendChild(ghost);
+          offsetX = e.clientX - rect.left; offsetY = e.clientY - rect.top;
+          placeholder = document.createElement('div');
+          placeholder.className = 'placeholder';
+          placeholder.style.height = rect.height + 'px';
+          card.classList.add('drag-origin');
+          card.after(placeholder);
+          moveGhost(e.clientX, e.clientY);
+        }
+
+        function moveGhost(x,y){
+          ghost.style.left = (x - offsetX) + 'px';
+          ghost.style.top = (y - offsetY) + 'px';
+        }
+
+        function placePlaceholder(x,y){
+          const el = document.elementFromPoint(x, y);
+          const target = el?.closest?.('.card, .placeholder');
+          if (!target || target === placeholder || target === card) return;
+          const rect = target.getBoundingClientRect();
+          const before = y < rect.top + rect.height/2;
+          if (before) target.before(placeholder); else target.after(placeholder);
+        }
+
+        function finishDrag(){
+          dragging = false; cancelPress();
+          if (ghost){ ghost.remove(); ghost=null; }
+          if (placeholder){ placeholder.before(card); placeholder.remove(); placeholder=null; }
+          card.classList.remove('drag-origin');
+          // DOM順から並びを保存
+          const ids = Array.from(grid.querySelectorAll('.card')).map(c=>c.dataset.id);
+          // state.notes も並び替え
+          const map = new Map(state.notes.map(n=>[n.id,n]));
+          state.notes = ids.map(id=>map.get(id)).filter(Boolean);
+          saveOrder(ids);
+        }
+
+        card.addEventListener('pointerdown', onPointerDown);
+        card.addEventListener('pointermove', onPointerMove);
+        card.addEventListener('pointerup', onPointerUp);
+        card.addEventListener('pointercancel', ()=>{ cancelPress(); if(ghost){ghost.remove();} if(placeholder){placeholder.remove();} card.classList.remove('drag-origin'); });
+        // iOSのブラウザでの長押しメニュー抑止
+        card.addEventListener('contextmenu', (e)=> dragging ? e.preventDefault() : null);
+      }
     }
 
     // -------------------- イベント配線 --------------------
