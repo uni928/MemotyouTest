@@ -11,3 +11,5 @@
 自分用ですが、使い方や参考にしたい方はご利用頂いて構いません。
 
 [# 普通のメモ帳](https://uni928.github.io/MemotyouTest/index3.html)
+
+[# ダウンロードフォルダに入れたい方(メモを PC で閲覧したい方等)](https://uni928.github.io/MemotyouTest/index4.html)
