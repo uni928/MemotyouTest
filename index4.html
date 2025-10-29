@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>メモをダウンロード（テキスト保存・超シンプル）</title>
+  <meta name="description" content="入力したメモを端末のダウンロードフォルダに .txt として保存するだけの超シンプルなページ。ブラウザへのローカル保存(LocalStorage/IndexedDB)は使いません。メモを PC で閲覧する等、ダウンロードフォルダにテキストファイルを配置したい方は是非ご利用下さい。" />
+  <style>
+    :root {
+      --bg1: 255, 251, 245;   /* warm paper */
+      --bg2: 240, 244, 255;   /* soft blue */
+      --ink: 34, 38, 46;      /* dark ink */
+      --accent: 32, 80, 255;  /* blue */
+      --accent-2: 120, 75, 255; /* purple */
+      --card: 255, 255, 255;
+      --muted: 105, 115, 134;
+      --ring: 32, 80, 255;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      background: radial-gradient(1200px 800px at 10% -10%, rgba(var(--bg2), .55), transparent 60%),
+                  radial-gradient(1000px 700px at 110% 0%, rgba(var(--bg2), .35), transparent 60%),
+                  radial-gradient(1200px 800px at 50% 120%, rgba(var(--bg2), .35), transparent 60%),
+                  linear-gradient(180deg, rgba(var(--bg1),1) 0%, rgba(var(--bg1),1) 100%);
+      color: rgb(var(--ink));
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic UI", "Yu Gothic", Meiryo, sans-serif;
+      letter-spacing: .02em;
+    }
+
+    .wrap {
+      min-height: 100%;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      place-items: center;
+      padding: 32px 16px 24px;
+    }
+
+    .card {
+      width: 100%;
+      max-width: 920px;
+      background: rgba(var(--card), 0.9);
+      backdrop-filter: blur(6px);
+      border-radius: 24px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.06), 0 2px 8px rgba(0,0,0,.05) inset;
+      border: 1px solid rgba(0,0,0,.04);
+      overflow: clip;
+    }
+
+    header {
+      padding: 28px 24px 12px;
+      display: grid;
+      gap: 6px;
+    }
+    .title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: clamp(20px, 2.6vw, 28px);
+      font-weight: 800;
+    }
+    .title svg { flex: none; }
+    .sub { color: rgb(var(--muted)); font-size: 14px; }
+
+    .desc {
+      margin: 6px 0 2px;
+      background: linear-gradient(180deg, rgba(255,255,255,.7), rgba(255,255,255,.35));
+      border-top: 1px dashed rgba(0,0,0,.08);
+      border-bottom: 1px dashed rgba(0,0,0,.08);
+      padding: 14px 18px;
+      font-size: 14px;
+      color: rgb(70 76 90);
+    }
+    .desc strong { color: rgb(var(--ink)); }
+    .desc code { background: #f6f7fb; padding: 2px 6px; border-radius: 6px; }
+
+    .main { padding: 12px 16px 18px; display: grid; gap: 12px; }
+
+    .field {
+      position: relative;
+      border-radius: 18px;
+      background: linear-gradient(180deg, #fff, #fbfbfd);
+      border: 1px solid rgba(0,0,0,.06);
+      box-shadow: 0 1px 0 rgba(255,255,255,.7) inset, 0 6px 16px rgba(0,0,0,.05) inset;
+    }
+    textarea {
+      width: 100%;
+      min-height: min(48vh, 540px);
+      resize: vertical;
+      display: block;
+      border: none;
+      outline: none;
+      background: transparent;
+      color: rgb(var(--ink));
+      font: 16px/1.65 ui-monospace, SFMono-Regular, Menlo, Consolas, "Noto Sans Mono", monospace;
+      padding: 18px 18px 58px; /* bottom space for the floating bar */
+      caret-color: rgb(var(--accent));
+    }
+
+    .actionbar {
+      position: sticky;
+      bottom: 0;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 10px;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(255,255,255,.86) 32%, rgba(255,255,255,.96) 100%);
+      border-top: 1px solid rgba(0,0,0,.08);
+      backdrop-filter: blur(8px);
+    }
+
+    .btn {
+      --h: 48px;
+      height: var(--h);
+      padding: 0 18px;
+      border-radius: 14px;
+      border: none;
+      cursor: pointer;
+      font-weight: 700;
+      letter-spacing: .03em;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      box-shadow: 0 10px 20px rgba(32, 80, 255, .18), 0 2px 6px rgba(32,80,255,.22);
+      background: linear-gradient(135deg, rgba(var(--accent),1) 0%, rgba(var(--accent-2),1) 100%);
+      color: #fff;
+      transition: transform .06s ease, box-shadow .2s ease, filter .2s ease;
+    }
+    .btn:hover { transform: translateY(-1px); filter: brightness(1.02); }
+    .btn:active { transform: translateY(1px) scale(.99); }
+    .btn[disabled] { opacity: .6; cursor: not-allowed; box-shadow: none; }
+
+    .hint {
+      font-size: 12px;
+      color: rgb(110 118 135);
+    }
+
+    details.howto { padding: 12px 16px 18px; }
+    details.howto summary {
+      user-select: none;
+      cursor: pointer;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    details.howto[open] summary { margin-bottom: 10px; }
+    ul.steps { margin: 8px 0 0 1.2em; padding: 0; }
+    ul.steps li { margin-bottom: 6px; }
+
+    footer { padding: 14px; color: rgb(110 118 135); font-size: 12px; text-align: center; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Noto Sans Mono", monospace; }
+
+    @media (max-width: 560px) {
+      .desc { font-size: 13px; }
+      textarea { min-height: 46vh; font-size: 15px; }
+      .btn { --h: 52px; width: 100%; justify-content: center; }
+      .actionbar { gap: 8px; flex-wrap: wrap; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card" role="region" aria-label="メモをダウンロード">
+      <header>
+        <div class="title">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 3v10m0 0 3.5-3.5M12 13 8.5 9.5" stroke="url(#g)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M4 15v2.5A2.5 2.5 0 0 0 6.5 20h11A2.5 2.5 0 0 0 20 17.5V15" stroke="url(#g)" stroke-width="2" stroke-linecap="round"/>
+            <defs>
+              <linearGradient id="g" x1="4" x2="20" y1="3" y2="21" gradientUnits="userSpaceOnUse">
+                <stop stop-color="#2050FF"/>
+                <stop offset="1" stop-color="#784BFF"/>
+              </linearGradient>
+            </defs>
+          </svg>
+          メモをダウンロード（.txt）
+        </div>
+        <div class="sub">入力欄とボタンだけ。押したらそのまま <span class="mono">.txt</span> としてダウンロード。</div>
+      </header>
+
+      <div class="desc">
+        <p>
+          このページは <strong>LocalStorage / IndexedDB を一切使わず</strong>、
+          書いたメモを <strong>端末のダウンロードフォルダにテキストファイル（.txt）</strong> として保存するだけのサイトです。
+          ブラウザの <strong>ダウンロード機能</strong>（Blob ＋ <code>download</code> 属性）を使うため、Android や iOS でもシンプルに動きます。
+        </p>
+      </div>
+
+      <div class="main">
+        <div class="field" aria-live="polite">
+          <textarea id="memo" placeholder="ここにメモを書いてください。\n（例）買い物リスト、打合せメモ、アイデアの下書き…" aria-label="メモ入力欄"></textarea>
+          <div class="actionbar">
+            <button id="dl" class="btn" type="button" title="テキストとしてダウンロード">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M12 3v10m0 0 3.5-3.5M12 13 8.5 9.5" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M4 15v2.5A2.5 2.5 0 0 0 6.5 20h11A2.5 2.5 0 0 0 20 17.5V15" stroke="white" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+              ダウンロード（.txt）
+            </button>
+            <span class="hint">空のまま実行するとサンプル文が入ります</span>
+          </div>
+        </div>
+      </div>
+
+      <details class="howto">
+        <summary>Android / iOS での保存場所について（タップして開く）</summary>
+        <ul class="steps">
+          <li><strong>Android（Chrome）</strong>：ダウンロードは通常 <em>「/Download」</em> に保存されます。通知パネルや Chrome の「︙ → ダウンロード」からも確認できます。</li>
+          <li><strong>iOS（Safari）</strong>：iOS 13 以降は <em>「ファイル」アプリ → iCloud Drive/このiPhone内 → Downloads</em> に保存されます。初回は保存先の確認ダイアログが出ることがあります。</li>
+          <li><strong>アプリ内ブラウザ</strong>（SNS 等）はダウンロードに制限がある場合があります。その際は <em>「Safariで開く」「Chromeで開く」</em> に切り替えてください。</li>
+        </ul>
+      </details>
+
+      <footer>
+        © <span id="year"></span> Simple TXT Downloader · すべて端末内で完結し、サーバー送信はありません
+      </footer>
+    </div>
+  </div>
+
+  <script>
+    const $memo = document.getElementById('memo');
+    const $dl = document.getElementById('dl');
+    const $year = document.getElementById('year');
+    $year.textContent = new Date().getFullYear();
+
+    function timestampStr(d = new Date()) {
+      const pad = n => String(n).padStart(2, '0');
+      const y = d.getFullYear();
+      const m = pad(d.getMonth()+1);
+      const day = pad(d.getDate());
+      const hh = pad(d.getHours());
+      const mm = pad(d.getMinutes());
+      return `${y}${m}${day}-${hh}${mm}`;
+    }
+
+    function downloadTxt() {
+      let text = $memo.value.trim();
+      if (!text) {
+        text = '（サンプル）ここにメモを書いて「ダウンロード」を押すと、.txt ファイルが端末のダウンロードフォルダに保存されます。';
+      }
+      // 先頭に UTF-8 BOM を付与（Windows のメモ帳で文字化けしないように）
+      const blob = new Blob(["\uFEFF" + text], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `memo-${timestampStr()}.txt`;
+      // iOS Safari 向けに body 配下へ追加してから click
+      document.body.appendChild(a);
+      a.click();
+      // 後始末
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+        a.remove();
+      }, 1000);
+    }
+
+    $dl.addEventListener('click', downloadTxt);
+
+    // UX：入力欄をすぐ使えるようオートフォーカス（iOS は制限あり）
+    window.addEventListener('load', () => {
+      $memo.focus({ preventScroll: true });
+    });
+  </script>
+</body>
+</html>
